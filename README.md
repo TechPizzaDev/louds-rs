@@ -77,11 +77,11 @@ The same tree is represented as follows using index.
 Then, create this tree structure with `Louds` and call operations to it.
 
 ```rust
-use louds_rs::{Louds, LoudsIndex, LoudsNodeNum};
+use louds::{BitLouds, LoudsIndex, LoudsNodeNum};
 
 // Construct from LBS.
 let s = "10_1110_10_0_1110_0_0_10_110_0_0_0";
-let louds = Louds::from(s);
+let louds = BitLouds::from(s);
 
 // LoudsNodeNum <-> LoudsIndex
 let node8 = LoudsNodeNum(8);
@@ -98,10 +98,10 @@ assert_eq!(louds.child_to_parent(index11), LoudsNodeNum(4));
 ### Constructors
 
 ```rust
-use louds_rs::Louds;
+use louds::BitLouds;
 
 // Most human-friendly way: Louds::from::<&str>()
-let louds1 = Louds::from("10_1110_10_0_1110_0_0_10_110_0_0_0");
+let louds1 = BitLouds::from("10_1110_10_0_1110_0_0_10_110_0_0_0");
 
 // Simple way: Louds::from::<&[bool]>()
 let mut arr = vec![
@@ -118,7 +118,7 @@ let mut arr = vec![
     false,
     false,
 ];
-let louds2 = Louds::from(&arr[..]);
+let louds2 = BitLouds::from(&arr[..]);
 ```
 
 ## Features

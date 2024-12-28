@@ -1,13 +1,13 @@
 mod louds_impl;
 
-extern crate fid_rs;
-use fid_rs::Fid;
-
+use fid::{BitVector, FID};
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
 
 #[cfg(feature = "mem_dbg")]
 use mem_dbg::{MemDbg, MemSize};
+
+pub type BitLouds = Louds<BitVector>;
 
 /// LOUDS (Level-Order Unary Degree Sequence).
 ///
@@ -18,8 +18,8 @@ use mem_dbg::{MemDbg, MemSize};
 #[derive(Clone, Debug)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[cfg_attr(feature = "mem_dbg", derive(MemDbg, MemSize))]
-pub struct Louds {
-    lbs: Fid,
+pub struct Louds<T: FID> {
+    lbs: T,
 }
 
 #[derive(PartialEq, Eq, Debug, Clone, Copy)]
@@ -37,17 +37,17 @@ pub struct LoudsNodeNum(pub u64);
 pub struct LoudsIndex(pub u64);
 
 /// An index iterator
-pub struct ChildIndexIter<'a> {
-    inner: &'a Louds,
+pub struct ChildIndexIter<'a, T: FID> {
+    inner: &'a Louds<T>,
     node: LoudsNodeNum,
     start: Option<u64>,
     end: Option<u64>,
 }
 /// A node iterator
-pub struct ChildNodeIter<'a>(ChildIndexIter<'a>);
+pub struct ChildNodeIter<'a, T: FID>(ChildIndexIter<'a, T>);
 
 /// An ancestor node iterator
-pub struct AncestorNodeIter<'a> {
-    inner: &'a Louds,
+pub struct AncestorNodeIter<'a, T: FID> {
+    inner: &'a Louds<T>,
     node: LoudsNodeNum,
 }

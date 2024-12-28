@@ -1,7 +1,22 @@
-use super::{ChildIndexIter, ChildNodeIter, Louds, LoudsIndex, LoudsNodeNum, AncestorNodeIter};
-use fid_rs::Fid;
+use std::iter::FromIterator;
 
-impl From<&str> for Louds {
+use super::{AncestorNodeIter, ChildIndexIter, ChildNodeIter, Louds, LoudsIndex, LoudsNodeNum};
+use fid::FID;
+
+fn fid_from_str<T: FID + FromIterator<bool>>(s: &str) -> T {
+    let s = s.bytes().filter_map(|c| match c {
+        b'0' => Some(false),
+        b'1' => Some(true),
+        b'_' => None,
+        b => panic!("byte '{}' not allowed", b),
+    });
+    T::from_iter(s)
+}
+
+impl<T: FID + FromIterator<bool>> From<&str> for Louds<T>
+where
+    for<'i> &'i T: IntoIterator<Item = bool>,
+{
     /// Prepares for building [Louds](struct.Louds.html) from LBS (LOUDS Bit vector).
     ///
     /// It takes _O(log `s`)_ time for validation.
@@ -17,35 +32,31 @@ impl From<&str> for Louds {
     /// - In the range of _[0, <u>length of LBS</u>)_;
     ///     - _<u>the number of '0'</u> == <u>the number of '1'</u> + 1_
     fn from(s: &str) -> Self {
-        let s: String = s
-            .chars()
-            .filter(|c| match c {
-                '0' | '1' => true,
-                '_' => false,
-                _ => panic!("not allowed"),
-            })
-            .collect();
-        let fid = Fid::from(s.as_str());
+        let fid = fid_from_str(s);
         Self::validate_lbs(&fid);
         Louds { lbs: fid }
     }
 }
 
-impl From<&[bool]> for Louds {
+impl<T: FID> From<&[bool]> for Louds<T>
+where
+    for<'i> &'i T: IntoIterator<Item = bool>,
+    for<'s> T: From<&'s [bool]>,
+{
     /// Prepares for building [Louds](struct.Louds.html) from LBS (LOUDS Bit vector).
     ///
     /// It takes _O(log `bits`)_ time for validation.
     ///
     /// # Panics
-    /// Same as [Louds::from::<&str>()](struct.Louds.html#implementations).
+    /// Same as [BitLouds::from::<&str>()](struct.Louds.html#implementations).
     fn from(bits: &[bool]) -> Self {
-        let fid = Fid::from(bits);
+        let fid = T::from(bits);
         Self::validate_lbs(&fid);
         Louds { lbs: fid }
     }
 }
 
-impl Louds {
+impl<T: FID> Louds<T> {
     /// # Panics
     /// `node_num` does not exist in this LOUDS.
     pub fn node_num_to_index(&self, node_num: LoudsNodeNum) -> LoudsIndex {
@@ -53,7 +64,7 @@ impl Louds {
 
         let index = self
             .lbs
-            .select(node_num.0)
+            .min_select(true, node_num.0)
             .unwrap_or_else(|| panic!("NodeNum({}) does not exist in this LOUDS", node_num.0,));
         LoudsIndex(index)
     }
@@ -63,7 +74,7 @@ impl Louds {
     pub fn index_to_node_num(&self, index: LoudsIndex) -> LoudsNodeNum {
         self.validate_index(index);
 
-        let node_num = self.lbs.rank(index.0);
+        let node_num = self.lbs.rank1(index.0 + 1);
         LoudsNodeNum(node_num)
     }
 
@@ -74,12 +85,12 @@ impl Louds {
         self.validate_index(index);
         assert!(index.0 != 0, "node#1 is root and doesn't have parent");
 
-        let parent_node_num = self.lbs.rank0(index.0);
+        let parent_node_num = self.lbs.rank0(index.0 + 1);
         LoudsNodeNum(parent_node_num)
     }
 
     /// Return an iterator to the `child` and its ancestors' node numbers.
-    pub fn child_to_ancestors(&self, child: LoudsNodeNum) -> AncestorNodeIter {
+    pub fn child_to_ancestors(&self, child: LoudsNodeNum) -> AncestorNodeIter<'_, T> {
         AncestorNodeIter {
             inner: self,
             node: child,
@@ -94,7 +105,7 @@ impl Louds {
 
     /// # Panics
     /// `node_num` does not exist in this LOUDS.
-    pub fn parent_to_children_indices(&self, node_num: LoudsNodeNum) -> ChildIndexIter {
+    pub fn parent_to_children_indices(&self, node_num: LoudsNodeNum) -> ChildIndexIter<'_, T> {
         assert!(node_num.0 > 0);
 
         ChildIndexIter {
@@ -107,17 +118,20 @@ impl Louds {
 
     /// # Panics
     /// `node_num` does not exist in this LOUDS.
-    pub fn parent_to_children_nodes(&self, node_num: LoudsNodeNum) -> ChildNodeIter {
+    pub fn parent_to_children_nodes(&self, node_num: LoudsNodeNum) -> ChildNodeIter<'_, T> {
         ChildNodeIter(self.parent_to_children_indices(node_num))
     }
 
     /// Checks if `lbs` satisfy the LBS's necessary and sufficient condition:
-    fn validate_lbs(lbs: &Fid) {
-        assert!(lbs[0]);
-        assert!(!lbs[1]);
+    fn validate_lbs<'a>(lbs: &'a T)
+    where
+        for<'i> &'i T: IntoIterator<Item = bool>,
+    {
+        assert!(lbs.get(0));
+        assert!(!lbs.get(1));
 
         let (mut cnt0, mut cnt1) = (0u64, 0u64);
-        for (i, bit) in lbs.iter().enumerate() {
+        for (i, bit) in lbs.into_iter().enumerate() {
             if bit {
                 cnt1 += 1
             } else {
@@ -137,15 +151,11 @@ impl Louds {
     /// # Panics
     /// `index` does not point to any node in this LOUDS.
     fn validate_index(&self, index: LoudsIndex) {
-        assert!(
-            self.lbs[index.0],
-            "LBS[index={:?}] must be '1'",
-            index,
-        );
+        assert!(self.lbs.get(index.0), "LBS[index={:?}] must be '1'", index,);
     }
 }
 
-impl<'a> ChildIndexIter<'a> {
+impl<'a, T: FID> ChildIndexIter<'a, T> {
     /// Return the length of the iterator.
     ///
     /// It costs _O(log N)_ if the iterator has not had `.next()` and
@@ -163,16 +173,24 @@ impl<'a> ChildIndexIter<'a> {
     pub fn len(&mut self) -> usize {
         if self.start.is_none() {
             self.start = Some(
-                self.inner.lbs.select0(self.node.0).unwrap_or_else(|| {
-                    panic!("NodeNum({}) does not exist in this LOUDS", self.node.0,)
-                }) + 1,
+                self.inner
+                    .lbs
+                    .min_select(false, self.node.0)
+                    .unwrap_or_else(|| {
+                        panic!("NodeNum({}) does not exist in this LOUDS", self.node.0,)
+                    })
+                    + 1,
             );
         }
         if self.end.is_none() {
             self.end = Some(
-                self.inner.lbs.select0(self.node.0 + 1).unwrap_or_else(|| {
-                    panic!("NodeNum({}) does not exist in this LOUDS", self.node.0 + 1,)
-                }) - 1,
+                self.inner
+                    .lbs
+                    .min_select(false, self.node.0 + 1)
+                    .unwrap_or_else(|| {
+                        panic!("NodeNum({}) does not exist in this LOUDS", self.node.0 + 1,)
+                    })
+                    - 1,
             );
         }
         let start = self.start.unwrap();
@@ -186,21 +204,25 @@ impl<'a> ChildIndexIter<'a> {
     }
 }
 
-impl<'a> Iterator for ChildIndexIter<'a> {
+impl<'a, T: FID> Iterator for ChildIndexIter<'a, T> {
     type Item = LoudsIndex;
     #[inline]
     fn next(&mut self) -> Option<Self::Item> {
         if self.start.is_none() {
             self.start = Some(
-                self.inner.lbs.select0(self.node.0).unwrap_or_else(|| {
-                    panic!("NodeNum({}) does not exist in this LOUDS", self.node.0,)
-                }) + 1,
+                self.inner
+                    .lbs
+                    .min_select(false, self.node.0)
+                    .unwrap_or_else(|| {
+                        panic!("NodeNum({}) does not exist in this LOUDS", self.node.0,)
+                    })
+                    + 1,
             );
         }
         let start = self.start.unwrap();
         self.end
             .map(|last| start <= last)
-            .unwrap_or_else(|| self.inner.lbs[start])
+            .unwrap_or_else(|| self.inner.lbs.get(start))
             .then(|| {
                 self.start = Some(start + 1);
                 LoudsIndex(start)
@@ -208,20 +230,24 @@ impl<'a> Iterator for ChildIndexIter<'a> {
     }
 }
 
-impl<'a> DoubleEndedIterator for ChildIndexIter<'a> {
+impl<'a, T: FID> DoubleEndedIterator for ChildIndexIter<'a, T> {
     #[inline]
     fn next_back(&mut self) -> Option<Self::Item> {
         if self.end.is_none() {
             self.end = Some(
-                self.inner.lbs.select0(self.node.0 + 1).unwrap_or_else(|| {
-                    panic!("NodeNum({}) does not exist in this LOUDS", self.node.0 + 1,)
-                }) - 1,
+                self.inner
+                    .lbs
+                    .min_select(false, self.node.0 + 1)
+                    .unwrap_or_else(|| {
+                        panic!("NodeNum({}) does not exist in this LOUDS", self.node.0 + 1,)
+                    })
+                    - 1,
             );
         }
         let end = self.end.unwrap();
         self.start
             .map(|first| first <= end)
-            .unwrap_or_else(|| self.inner.lbs[end])
+            .unwrap_or_else(|| self.inner.lbs.get(end))
             .then(|| {
                 self.end = Some(end - 1);
                 LoudsIndex(end)
@@ -229,7 +255,7 @@ impl<'a> DoubleEndedIterator for ChildIndexIter<'a> {
     }
 }
 
-impl<'a> Iterator for ChildNodeIter<'a> {
+impl<'a, T: FID> Iterator for ChildNodeIter<'a, T> {
     type Item = LoudsNodeNum;
     #[inline]
     fn next(&mut self) -> Option<Self::Item> {
@@ -239,7 +265,7 @@ impl<'a> Iterator for ChildNodeIter<'a> {
     }
 }
 
-impl<'a> Iterator for AncestorNodeIter<'a> {
+impl<'a, T: FID> Iterator for AncestorNodeIter<'a, T> {
     type Item = LoudsNodeNum;
     #[inline]
     fn next(&mut self) -> Option<Self::Item> {
@@ -248,13 +274,13 @@ impl<'a> Iterator for AncestorNodeIter<'a> {
         } else {
             let result = self.node;
             let index = self.inner.node_num_to_index(self.node);
-            self.node = LoudsNodeNum(self.inner.lbs.rank0(index.0));
+            self.node = LoudsNodeNum(self.inner.lbs.rank0(index.0 + 1));
             Some(result)
         }
     }
 }
 
-impl<'a> DoubleEndedIterator for ChildNodeIter<'a> {
+impl<'a, T: FID> DoubleEndedIterator for ChildNodeIter<'a, T> {
     #[inline]
     fn next_back(&mut self) -> Option<Self::Item> {
         self.0
@@ -263,7 +289,7 @@ impl<'a> DoubleEndedIterator for ChildNodeIter<'a> {
     }
 }
 
-impl<'a> ChildNodeIter<'a> {
+impl<'a, T: FID> ChildNodeIter<'a, T> {
     /// See [ChildIndexIter::len].
     pub fn len(&mut self) -> usize {
         self.0.len()
@@ -278,7 +304,7 @@ impl<'a> ChildNodeIter<'a> {
 #[cfg(test)]
 mod validate_lbs_success_tests {
     use crate::Louds;
-    use fid_rs::Fid;
+    use fid::BitVector;
 
     macro_rules! parameterized_tests {
         ($($name:ident: $value:expr,)*) => {
@@ -286,7 +312,7 @@ mod validate_lbs_success_tests {
             #[test]
             fn $name() {
                 let s = $value;
-                let fid = Fid::from(s);
+                let fid = super::fid_from_str::<BitVector>(s);
                 Louds::validate_lbs(&fid);
             }
         )*
@@ -304,7 +330,7 @@ mod validate_lbs_success_tests {
 #[cfg(test)]
 mod validate_lbs_failure_tests {
     use crate::Louds;
-    use fid_rs::Fid;
+    use fid::BitVector;
 
     macro_rules! parameterized_tests {
         ($($name:ident: $value:expr,)*) => {
@@ -313,7 +339,7 @@ mod validate_lbs_failure_tests {
             #[should_panic]
             fn $name() {
                 let s = $value;
-                let fid = Fid::from(s);
+                let fid = super::fid_from_str::<BitVector>(s);
                 Louds::validate_lbs(&fid);
             }
         )*
@@ -339,7 +365,7 @@ mod validate_lbs_failure_tests {
 
 #[cfg(test)]
 mod node_num_to_index_success_tests {
-    use crate::{Louds, LoudsIndex, LoudsNodeNum};
+    use crate::{BitLouds, LoudsIndex, LoudsNodeNum};
 
     macro_rules! parameterized_tests {
         ($($name:ident: $value:expr,)*) => {
@@ -347,7 +373,7 @@ mod node_num_to_index_success_tests {
             #[test]
             fn $name() {
                 let (in_s, node_num, expected_index) = $value;
-                let louds = Louds::from(in_s);
+                let louds = BitLouds::from(in_s);
                 let index = louds.node_num_to_index(LoudsNodeNum(node_num));
                 assert_eq!(index, LoudsIndex(expected_index));
             }
@@ -377,7 +403,7 @@ mod node_num_to_index_success_tests {
 
 #[cfg(test)]
 mod node_num_to_index_failure_tests {
-    use crate::{Louds, LoudsNodeNum};
+    use crate::{BitLouds, LoudsNodeNum};
 
     macro_rules! parameterized_node_not_found_tests {
         ($($name:ident: $value:expr,)*) => {
@@ -386,7 +412,7 @@ mod node_num_to_index_failure_tests {
             #[should_panic]
             fn $name() {
                 let (in_s, node_num) = $value;
-                let louds = Louds::from(in_s);
+                let louds = BitLouds::from(in_s);
                 let _ = louds.node_num_to_index(LoudsNodeNum(node_num));
             }
         )*
@@ -407,7 +433,7 @@ mod node_num_to_index_failure_tests {
 
 #[cfg(test)]
 mod index_to_node_num_success_tests {
-    use crate::{Louds, LoudsIndex, LoudsNodeNum};
+    use crate::{BitLouds, LoudsIndex, LoudsNodeNum};
 
     macro_rules! parameterized_tests {
         ($($name:ident: $value:expr,)*) => {
@@ -415,7 +441,7 @@ mod index_to_node_num_success_tests {
             #[test]
             fn $name() {
                 let (in_s, index, expected_node_num) = $value;
-                let louds = Louds::from(in_s);
+                let louds = BitLouds::from(in_s);
                 let node_num = louds.index_to_node_num(LoudsIndex(index));
                 assert_eq!(node_num, LoudsNodeNum(expected_node_num));
             }
@@ -445,7 +471,7 @@ mod index_to_node_num_success_tests {
 
 #[cfg(test)]
 mod index_to_node_num_failure_tests {
-    use crate::{Louds, LoudsIndex};
+    use crate::{BitLouds, LoudsIndex};
 
     macro_rules! parameterized_index_not_point_to_node_tests {
         ($($name:ident: $value:expr,)*) => {
@@ -454,7 +480,7 @@ mod index_to_node_num_failure_tests {
             #[should_panic]
             fn $name() {
                 let (in_s, index) = $value;
-                let louds = Louds::from(in_s);
+                let louds = BitLouds::from(in_s);
                 let _ = louds.index_to_node_num(LoudsIndex(index));
             }
         )*
@@ -489,7 +515,7 @@ mod index_to_node_num_failure_tests {
 
 #[cfg(test)]
 mod child_to_parent_success_tests {
-    use crate::{Louds, LoudsIndex, LoudsNodeNum};
+    use crate::{BitLouds, LoudsIndex, LoudsNodeNum};
 
     macro_rules! parameterized_tests {
         ($($name:ident: $value:expr,)*) => {
@@ -497,7 +523,7 @@ mod child_to_parent_success_tests {
             #[test]
             fn $name() {
                 let (in_s, index, expected_parent) = $value;
-                let louds = Louds::from(in_s);
+                let louds = BitLouds::from(in_s);
                 let parent = louds.child_to_parent(LoudsIndex(index));
                 assert_eq!(parent, LoudsNodeNum(expected_parent));
             }
@@ -523,7 +549,7 @@ mod child_to_parent_success_tests {
 
 #[cfg(test)]
 mod child_to_parent_failure_tests {
-    use crate::{Louds, LoudsIndex};
+    use crate::{BitLouds, LoudsIndex};
 
     macro_rules! parameterized_index_not_point_to_node_tests {
         ($($name:ident: $value:expr,)*) => {
@@ -532,7 +558,7 @@ mod child_to_parent_failure_tests {
             #[should_panic]
             fn $name() {
                 let (in_s, index) = $value;
-                let louds = Louds::from(in_s);
+                let louds = BitLouds::from(in_s);
                 let _ = louds.child_to_parent(LoudsIndex(index));
             }
         )*
@@ -571,7 +597,7 @@ mod child_to_parent_failure_tests {
             #[should_panic]
             fn $name() {
                 let in_s = $value;
-                let louds = Louds::from(in_s);
+                let louds = BitLouds::from(in_s);
                 let _ = louds.child_to_parent(LoudsIndex(0));
             }
         )*
@@ -587,7 +613,7 @@ mod child_to_parent_failure_tests {
 
 #[cfg(test)]
 mod parent_to_children_success_tests {
-    use crate::{Louds, LoudsIndex, LoudsNodeNum};
+    use crate::{BitLouds, LoudsIndex, LoudsNodeNum};
 
     macro_rules! parameterized_tests {
         ($($name:ident: $value:expr,)*) => {
@@ -595,7 +621,7 @@ mod parent_to_children_success_tests {
             #[test]
             fn $name() {
                 let (in_s, node_num, expected_children) = $value;
-                let louds = Louds::from(in_s);
+                let louds = BitLouds::from(in_s);
                 let children: Vec<_> = louds.parent_to_children(LoudsNodeNum(node_num));
                 assert_eq!(children, expected_children.iter().map(|c| LoudsIndex(*c)).collect::<Vec<LoudsIndex>>());
             }
@@ -625,7 +651,7 @@ mod parent_to_children_success_tests {
 
 #[cfg(test)]
 mod child_to_ancestors_success_tests {
-    use crate::{Louds, LoudsNodeNum};
+    use crate::{BitLouds, LoudsNodeNum};
 
     macro_rules! parameterized_tests {
         ($($name:ident: $value:expr,)*) => {
@@ -633,7 +659,7 @@ mod child_to_ancestors_success_tests {
             #[test]
             fn $name() {
                 let (in_s, node_num, expected_children) = $value;
-                let louds = Louds::from(in_s);
+                let louds = BitLouds::from(in_s);
                 let children: Vec<_> = louds.child_to_ancestors(LoudsNodeNum(node_num)).collect();
                 assert_eq!(children, expected_children.iter().map(|c| LoudsNodeNum(*c)).collect::<Vec<LoudsNodeNum>>());
             }
@@ -663,7 +689,7 @@ mod child_to_ancestors_success_tests {
 
 #[cfg(test)]
 mod child_to_ancestors_failure_tests {
-    use crate::{Louds, LoudsIndex};
+    use crate::{BitLouds, LoudsIndex};
 
     macro_rules! parameterized_index_not_point_to_node_tests {
         ($($name:ident: $value:expr,)*) => {
@@ -672,7 +698,7 @@ mod child_to_ancestors_failure_tests {
             #[should_panic]
             fn $name() {
                 let (in_s, index) = $value;
-                let louds = Louds::from(in_s);
+                let louds = BitLouds::from(in_s);
                 let node = louds.index_to_node_num(LoudsIndex(index));
                 let _ = louds.child_to_ancestors(node);
             }
@@ -712,7 +738,7 @@ mod child_to_ancestors_failure_tests {
             #[should_panic]
             fn $name() {
                 let in_s = $value;
-                let louds = Louds::from(in_s);
+                let louds = BitLouds::from(in_s);
                 let _ = louds.child_to_parent(LoudsIndex(0));
             }
         )*
@@ -728,7 +754,7 @@ mod child_to_ancestors_failure_tests {
 
 #[cfg(test)]
 mod parent_to_children_indices_success_tests {
-    use crate::{Louds, LoudsIndex, LoudsNodeNum};
+    use crate::{BitLouds, LoudsIndex, LoudsNodeNum};
 
     macro_rules! parameterized_tests {
         ($($name:ident: $value:expr,)*) => {
@@ -736,7 +762,7 @@ mod parent_to_children_indices_success_tests {
             #[test]
             fn $name() {
                 let (in_s, node_num, expected_children) = $value;
-                let louds = Louds::from(in_s);
+                let louds = BitLouds::from(in_s);
                 let children: Vec<_> = louds.parent_to_children_indices(LoudsNodeNum(node_num)).collect();
                 assert_eq!(children, expected_children.iter().map(|c| LoudsIndex(*c)).collect::<Vec<LoudsIndex>>());
             }
@@ -766,7 +792,7 @@ mod parent_to_children_indices_success_tests {
 
 #[cfg(test)]
 mod parent_to_children_indices_rev_success_tests {
-    use crate::{Louds, LoudsIndex, LoudsNodeNum};
+    use crate::{BitLouds, LoudsIndex, LoudsNodeNum};
 
     macro_rules! parameterized_tests {
         ($($name:ident: $value:expr,)*) => {
@@ -774,7 +800,7 @@ mod parent_to_children_indices_rev_success_tests {
             #[test]
             fn $name() {
                 let (in_s, node_num, expected_children) = $value;
-                let louds = Louds::from(in_s);
+                let louds = BitLouds::from(in_s);
                 let children: Vec<_> = louds.parent_to_children_indices(LoudsNodeNum(node_num)).rev().collect();
                 assert_eq!(children, expected_children.iter().map(|c| LoudsIndex(*c)).collect::<Vec<LoudsIndex>>());
             }
@@ -804,7 +830,7 @@ mod parent_to_children_indices_rev_success_tests {
 
 #[cfg(test)]
 mod parent_to_children_indices_len_success_tests {
-    use crate::{Louds, LoudsNodeNum};
+    use crate::{BitLouds, LoudsNodeNum};
 
     macro_rules! parameterized_tests {
         ($($name:ident: $value:expr,)*) => {
@@ -812,7 +838,7 @@ mod parent_to_children_indices_len_success_tests {
             #[test]
             fn $name() {
                 let (in_s, node_num, expected_size) = $value;
-                let louds = Louds::from(in_s);
+                let louds = BitLouds::from(in_s);
                 let mut iter = louds.parent_to_children_indices(LoudsNodeNum(node_num));
                 assert_eq!(iter.len(), expected_size);
             }
@@ -842,7 +868,7 @@ mod parent_to_children_indices_len_success_tests {
 
 #[cfg(test)]
 mod parent_to_children_indices_next_back_success_tests {
-    use crate::{Louds, LoudsIndex, LoudsNodeNum};
+    use crate::{BitLouds, LoudsIndex, LoudsNodeNum};
 
     macro_rules! parameterized_tests {
         ($($name:ident: $value:expr,)*) => {
@@ -850,7 +876,7 @@ mod parent_to_children_indices_next_back_success_tests {
             #[test]
             fn $name() {
                 let (in_s, node_num, expected_children) = $value;
-                let louds = Louds::from(in_s);
+                let louds = BitLouds::from(in_s);
                 let mut front = Vec::new();
                 let mut back = Vec::new();
                 let mut iter = louds.parent_to_children_indices(LoudsNodeNum(node_num));
@@ -889,7 +915,7 @@ mod parent_to_children_indices_next_back_success_tests {
 
 #[cfg(test)]
 mod parent_to_children_failure_tests {
-    use crate::{Louds, LoudsNodeNum};
+    use crate::{BitLouds, LoudsNodeNum};
 
     macro_rules! parameterized_node_not_found_tests {
         ($($name:ident: $value:expr,)*) => {
@@ -898,7 +924,7 @@ mod parent_to_children_failure_tests {
             #[should_panic]
             fn $name() {
                 let (in_s, node_num) = $value;
-                let louds = Louds::from(in_s);
+                let louds = BitLouds::from(in_s);
                 let _: Vec<_> = louds.parent_to_children(LoudsNodeNum(node_num));
             }
         )*
