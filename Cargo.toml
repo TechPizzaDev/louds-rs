@@ -28,6 +28,8 @@ rand = "0.8"
 serde = ["fid64-rs/serde", "dep:serde"]
 mem_dbg = ["dep:mem_dbg", "fid64-rs/mem_dbg"]
 
+default = ["serde", "mem_dbg"]
+
 [[bench]]
 name = "bench"
 harness = false
