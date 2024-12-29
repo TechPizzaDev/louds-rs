@@ -1,6 +1,6 @@
 [package]
 name = "louds64-rs"
-version = "0.2.0"
+version = "0.2.1"
 authors = ["TechPizza", "Sho Nakatani <lay.sakura@gmail.com>"]
 description = "LOUDS (Level-Order Unary Degree Sequence) with 64-bit indices in Rust"
 readme = "README.md"

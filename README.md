@@ -24,7 +24,7 @@ To use louds-rs, add the following to your `Cargo.toml` file:
 
 ```toml
 [dependencies]
-louds-rs = "0.1"  # NOTE: Replace to latest minor version.
+louds-rs = "0.2"  # NOTE: Replace to latest minor version.
 ```
 
 ### Usage Overview
