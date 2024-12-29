@@ -43,7 +43,7 @@ mod louds {
             c.bench_with_input(
                 BenchmarkId::new("Louds::from::<&[bool]>(&[...(bin tree of N nodes)])", n),
                 &generate_binary_tree_lbs_bits(n - 1),
-                |b, v| b.iter(|| BitLouds::from(v.as_slice())),
+                |b, v| b.iter(|| BitLouds::try_from(v.as_slice()).unwrap()),
             );
         }
     }
@@ -53,7 +53,7 @@ mod louds {
             c.bench_with_input(
                 BenchmarkId::new("Louds::from::<&str>(\"...(bin tree of N nodes)\")", n),
                 &generate_binary_tree_lbs_string(n - 1),
-                |b, s| b.iter(|| BitLouds::from(s.as_str())),
+                |b, s| b.iter(|| BitLouds::try_from(s.as_str()).unwrap()),
             );
         }
     }
@@ -62,7 +62,7 @@ mod louds {
         for n in SIZES {
             c.bench_with_input(
                 BenchmarkId::new("Louds(N)::node_num_to_index()", n),
-                &BitLouds::from(generate_binary_tree_lbs_bits(n - 1).as_slice()),
+                &BitLouds::try_from(generate_binary_tree_lbs_bits(n - 1).as_slice()).unwrap(),
                 |b, l| b.iter(|| l.node_num_to_index(LoudsNodeNum(n - 1))),
             );
         }
@@ -72,7 +72,7 @@ mod louds {
         for n in SIZES {
             c.bench_with_input(
                 BenchmarkId::new("Louds(N)::index_to_node_num()", n),
-                &BitLouds::from(generate_binary_tree_lbs_bits(n - 1).as_slice()),
+                &BitLouds::try_from(generate_binary_tree_lbs_bits(n - 1).as_slice()).unwrap(),
                 |b, l| b.iter(|| l.index_to_node_num(LoudsIndex(n / 2 + 1))),
             );
         }
@@ -82,7 +82,7 @@ mod louds {
         for n in SIZES {
             c.bench_with_input(
                 BenchmarkId::new("Louds(N)::parent_to_children()", n),
-                &BitLouds::from(generate_binary_tree_lbs_bits(n - 1).as_slice()),
+                &BitLouds::try_from(generate_binary_tree_lbs_bits(n - 1).as_slice()).unwrap(),
                 |b, l| b.iter(|| l.parent_to_children(LoudsNodeNum(n - 1))),
             );
         }
@@ -92,7 +92,7 @@ mod louds {
         for n in SIZES {
             c.bench_with_input(
                 BenchmarkId::new("Louds(N)::child_to_parent()", n),
-                &BitLouds::from(generate_binary_tree_lbs_bits(n - 1).as_slice()),
+                &BitLouds::try_from(generate_binary_tree_lbs_bits(n - 1).as_slice()).unwrap(),
                 |b, l| b.iter(|| l.child_to_parent(LoudsIndex(n / 2 + 1))),
             );
         }
