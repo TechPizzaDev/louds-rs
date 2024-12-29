@@ -18,7 +18,7 @@ pub type BitLouds = Louds<BitVector>;
 #[derive(Clone, Debug)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[cfg_attr(feature = "mem_dbg", derive(MemDbg, MemSize))]
-pub struct Louds<T: FID> {
+pub struct Louds<T: FID = BitVector> {
     lbs: T,
 }
 
