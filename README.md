@@ -81,7 +81,7 @@ use louds::{BitLouds, LoudsIndex, LoudsNodeNum};
 
 // Construct from LBS.
 let s = "10_1110_10_0_1110_0_0_10_110_0_0_0";
-let louds = BitLouds::from(s);
+let louds = BitLouds::try_from(s).unwrap();
 
 // LoudsNodeNum <-> LoudsIndex
 let node8 = LoudsNodeNum(8);
@@ -101,7 +101,7 @@ assert_eq!(louds.child_to_parent(index11), LoudsNodeNum(4));
 use louds::BitLouds;
 
 // Most human-friendly way: Louds::from::<&str>()
-let louds1 = BitLouds::from("10_1110_10_0_1110_0_0_10_110_0_0_0");
+let louds1 = BitLouds::try_from("10_1110_10_0_1110_0_0_10_110_0_0_0").unwrap();
 
 // Simple way: Louds::from::<&[bool]>()
 let mut arr = vec![
@@ -118,7 +118,7 @@ let mut arr = vec![
     false,
     false,
 ];
-let louds2 = BitLouds::from(&arr[..]);
+let louds2 = BitLouds::try_from(&arr[..]);
 ```
 
 ## Features

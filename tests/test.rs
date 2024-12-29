@@ -28,7 +28,7 @@ fn fuzzing_test() {
         eprintln!("build(): LBS = \"{}\"", s);
 
         let n_nodes = s.len() / 2;
-        let louds = BitLouds::from(s.as_str());
+        let louds = BitLouds::try_from(s.as_str()).unwrap();
 
         for raw_node_num in 1..=n_nodes {
             let node_num = LoudsNodeNum(raw_node_num as u64);

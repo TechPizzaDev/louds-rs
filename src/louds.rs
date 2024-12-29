@@ -22,6 +22,12 @@ pub struct Louds<T: FID> {
     lbs: T,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct LoudsError {
+    ones: u64,
+    zeros: u64,
+}
+
 #[derive(PartialEq, Eq, Debug, Clone, Copy)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[cfg_attr(feature = "mem_dbg", derive(MemDbg, MemSize))]
